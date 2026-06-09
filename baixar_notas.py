@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 
 import tkinter as tk
-from tkinter import scrolledtext, messagebox
+from tkinter import scrolledtext, messagebox, ttk
 from pathlib import Path
 from datetime import datetime
 import threading
 import requests
 import zipfile
 import os
+
+from modulos.extrair_chave import extrair_numero_nota
 
 WEBHOOK_URL = "https://discord.com/api/webhooks/1503887285324877825/Br94v7dk6qStQ8ADGIb5nlJaevG05852-VNMwGaDNtjGf7RXX10hrsgBq6tZ9WWZnFPR"
 
@@ -20,30 +22,69 @@ class App:
         self.root.title("Download de XMLs NF-e")
         self.root.geometry("800x600")
 
+        self.notebook = ttk.Notebook(root)
+
+        self.notebook.pack(
+            fill="both",
+            expand=True
+        )
+
+        self.aba_download = ttk.Frame(
+            self.notebook
+        )
+
+        self.aba_inutilizacao = ttk.Frame(
+            self.notebook
+        )
+
+        self.aba_chave = ttk.Frame(
+            self.notebook
+        )
+
+        self.notebook.add(
+            self.aba_download,
+            text="Download XML"
+        )
+
+        self.notebook.add(
+            self.aba_inutilizacao,
+            text="Inutilização"
+        )
+
+        self.notebook.add(
+            self.aba_chave,
+            text="Download por Chave"
+        )
+
         tk.Label(
-            root,
+            self.aba_download,
             text="CNPJ",
             font=("Arial", 10, "bold")
         ).pack(pady=5)
 
-        self.cnpj = tk.Entry(root, width=40)
+        self.cnpj = tk.Entry(
+            self.aba_download,
+            width=40
+        )
+
         self.cnpj.pack()
 
         tk.Label(
-            root,
+            self.aba_download,
             text="Notas separadas por vírgula",
             font=("Arial", 10, "bold")
         ).pack(pady=5)
 
         self.notas = tk.Text(
-            root,
+            self.aba_download,
             height=6,
             width=90
         )
+
         self.notas.pack()
 
         self.botao = tk.Button(
-            root,
+            self.aba_download,
             text="Baixar Notas",
             command=self.iniciar_download,
             width=25,
@@ -53,12 +94,12 @@ class App:
         self.botao.pack(pady=10)
 
         tk.Label(
-            root,
+            self.aba_download,
             text="Log"
         ).pack()
 
         self.log = scrolledtext.ScrolledText(
-            root,
+            self.aba_download,
             height=20
         )
 
@@ -69,6 +110,57 @@ class App:
             pady=10
         )
 
+        # =========================
+        # ABA DOWNLOAD POR CHAVE
+        # =========================
+
+        tk.Label(
+            self.aba_chave,
+            text="CNPJ",
+            font=("Arial", 10, "bold")
+        ).pack(pady=5)
+
+        self.cnpj_chave = tk.Entry(
+            self.aba_chave,
+            width=40
+        )
+
+        self.cnpj_chave.pack()
+
+        tk.Label(
+            self.aba_chave,
+            text="Chave da NF-e",
+            font=("Arial", 10, "bold")
+        ).pack(pady=5)
+
+        self.chave_nfe = tk.Entry(
+            self.aba_chave,
+            width=60
+        )
+
+        self.chave_nfe.pack()
+
+        self.botao_chave = tk.Button(
+            self.aba_chave,
+            text="Baixar XML",
+            command=self.baixar_por_chave,
+            width=25,
+            height=2
+        )
+
+        self.botao_chave.pack(pady=10)
+
+        self.log_chave = scrolledtext.ScrolledText(
+            self.aba_chave,
+            height=20
+        )
+
+        self.log_chave.pack(
+            fill="both",
+            expand=True,
+            padx=10,
+            pady=10
+        )
     def escrever_log(self, texto):
 
         self.log.insert(
@@ -314,10 +406,111 @@ class App:
             )
 
 
+    def baixar_por_chave(self):
+
+        cnpj = self.cnpj_chave.get().strip()
+
+        chave = self.chave_nfe.get().strip()
+
+        if not cnpj:
+
+            messagebox.showerror(
+                "Erro",
+                "Informe o CNPJ."
+            )
+
+            return
+
+        if not chave:
+
+            messagebox.showerror(
+                "Erro",
+                "Informe a chave da NF-e."
+            )
+
+            return
+
+        try:
+
+            numero = extrair_numero_nota(
+                chave
+            )
+
+            self.log_chave.insert(
+                tk.END,
+                f"Nota encontrada: {numero}\n"
+            )
+
+            url = (
+                f"https://nfe.epoc.com.br/"
+                f"download-nota/{cnpj}/{numero}"
+            )
+
+            self.log_chave.insert(
+                tk.END,
+                "Baixando XML...\n"
+            )
+
+            resposta = requests.get(
+                url,
+                timeout=60
+            )
+
+            if (
+                "nota não existe"
+                in resposta.text.lower()
+            ):
+
+                self.log_chave.insert(
+                    tk.END,
+                    "Nota não encontrada.\n"
+                )
+
+                self.log_chave.see(tk.END)
+
+                return
+
+            destino = (
+                Path.home()
+                / "Downloads"
+                / f"nota_{numero}.xml"
+            )
+
+            with open(
+                destino,
+                "w",
+                encoding="utf-8"
+            ) as arquivo:
+
+                arquivo.write(
+                    resposta.text
+                )
+
+            self.log_chave.insert(
+                tk.END,
+                f"XML salvo em:\n{destino}\n\n"
+            )
+
+            self.log_chave.see(tk.END)
+
+            messagebox.showinfo(
+                "Sucesso",
+                f"XML salvo em:\n{destino}"
+            )
+
+        except Exception as erro:
+
+            self.log_chave.insert(
+                tk.END,
+                f"Erro: {erro}\n"
+            )
+
+            self.log_chave.see(tk.END)
+
 root = tk.Tk()
 
 app = App(root)
 
 root.mainloop()
 
-# teste github
+
